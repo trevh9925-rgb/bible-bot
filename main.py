@@ -1,29 +1,15 @@
 import discord
-from discord.ext import tasks
-import random
 import os
 import json
+import random
+import asyncio
 from dotenv import load_dotenv
-from flask import Flask
-import threading
 
 # -----------------------------
 # Load Token
 # -----------------------------
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-
-# -----------------------------
-# Flask Keep Alive Server ⭐
-# -----------------------------
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is alive"
-
-def run_flask():
-    app.run(host="0.0.0.0", port=8080)
 
 # -----------------------------
 # Intents
@@ -36,7 +22,7 @@ VERSE_FILE = "nkjv_verses.json"
 
 
 # -----------------------------
-# Config Handling (Safe)
+# Config Handling
 # -----------------------------
 def load_config():
 
@@ -46,19 +32,7 @@ def load_config():
 
     with open(CONFIG_FILE, "r") as f:
         try:
-            data = json.load(f)
-
-            # Fix old format if needed
-            fixed = {}
-
-            for guild_id, settings in data.items():
-                if isinstance(settings, int):
-                    fixed[guild_id] = {"channel": settings}
-                else:
-                    fixed[guild_id] = settings
-
-            return fixed
-
+            return json.load(f)
         except:
             return {}
 
@@ -115,7 +89,7 @@ bot = MyBot()
 
 
 # -----------------------------
-# Send Verse Function
+# Send Verse
 # -----------------------------
 async def send_verse(channel):
 
@@ -137,7 +111,7 @@ async def send_verse(channel):
 
 
 # -----------------------------
-# Start Daily Loop Per Guild
+# Daily Loop Per Server
 # -----------------------------
 async def start_guild_loop(guild_id, channel):
 
@@ -151,11 +125,8 @@ async def start_guild_loop(guild_id, channel):
         while True:
             await send_verse(channel)
 
-            await discord.utils.sleep_until(
-                discord.utils.utcnow().replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                ) + discord.utils.timedelta(days=1)
-            )
+            # 24 hour delay
+            await asyncio.sleep(86400)
 
     bot.guild_tasks[guild_id] = bot.loop.create_task(loop_task())
 
@@ -191,14 +162,12 @@ async def bible_channel(
 
 
 # -----------------------------
-# Startup Recovery ⭐
+# Startup Recovery
 # -----------------------------
 @bot.event
 async def on_ready():
 
     print(f"Logged in as {bot.user}")
-
-    threading.Thread(target=run_flask).start()
 
     config = load_config()
 
@@ -221,11 +190,4 @@ async def on_ready():
 # -----------------------------
 # Run Bot
 # -----------------------------
-import asyncio
-
-async def main():
-    await asyncio.sleep(10)  # ⬅ Prevents startup spam
-    await bot.start(TOKEN)
-
-asyncio.run(main())
-
+bot.run(TOKEN)
