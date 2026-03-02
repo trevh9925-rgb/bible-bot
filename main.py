@@ -20,7 +20,6 @@ intents.message_content = True
 CONFIG_FILE = "config.json"
 VERSE_FILE = "nkjv_verses.json"
 
-
 # -----------------------------
 # Config Handling
 # -----------------------------
@@ -36,11 +35,9 @@ def load_config():
         except:
             return {}
 
-
 def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
-
 
 # -----------------------------
 # Verse Database
@@ -51,7 +48,6 @@ def load_verses():
             return json.load(f)
     except:
         return []
-
 
 def get_random_verse():
 
@@ -67,7 +63,6 @@ def get_random_verse():
 
     return reference, text
 
-
 # -----------------------------
 # Bot Setup
 # -----------------------------
@@ -75,18 +70,14 @@ class MyBot(discord.Client):
 
     def __init__(self):
         super().__init__(intents=intents)
-
         from discord import app_commands
         self.tree = app_commands.CommandTree(self)
-
         self.guild_tasks = {}
 
     async def setup_hook(self):
         await self.tree.sync()
 
-
 bot = MyBot()
-
 
 # -----------------------------
 # Send Verse
@@ -109,9 +100,8 @@ async def send_verse(channel):
 
     await channel.send(embed=embed)
 
-
 # -----------------------------
-# Daily Loop Per Server
+# Per Server Scheduler
 # -----------------------------
 async def start_guild_loop(guild_id, channel):
 
@@ -124,12 +114,9 @@ async def start_guild_loop(guild_id, channel):
 
         while True:
             await send_verse(channel)
-
-            # 24 hour delay
-            await asyncio.sleep(86400)
+            await asyncio.sleep(86400)  # 24 hours
 
     bot.guild_tasks[guild_id] = bot.loop.create_task(loop_task())
-
 
 # -----------------------------
 # Slash Command
@@ -152,14 +139,12 @@ async def bible_channel(
     save_config(config)
 
     await send_verse(channel)
-
     await start_guild_loop(gid, channel)
 
     await interaction.response.send_message(
         f"✅ Daily verses will be sent in {channel.mention}",
         ephemeral=True
     )
-
 
 # -----------------------------
 # Startup Recovery
@@ -168,7 +153,6 @@ async def bible_channel(
 async def on_ready():
 
     print(f"Logged in as {bot.user}")
-
     config = load_config()
 
     for guild_id, settings in config.items():
@@ -186,8 +170,11 @@ async def on_ready():
 
     print("Recovery complete")
 
+# -----------------------------
+# Protected Startup (IMPORTANT ⭐)
+# -----------------------------
+async def main():
+    await asyncio.sleep(30)  # Prevent startup rate limit spam
+    await bot.start(TOKEN)
 
-# -----------------------------
-# Run Bot
-# -----------------------------
-bot.run(TOKEN)
+asyncio.run(main())
