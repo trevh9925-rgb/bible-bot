@@ -4,19 +4,20 @@ from discord import app_commands
 import random
 import json
 import os
+import time
 import threading
 from dotenv import load_dotenv
 from flask import Flask
 
-# -----------------------------
+# =============================
 # Load Token
-# -----------------------------
+# =============================
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# -----------------------------
-# Flask Heartbeat Server (Render Fix)
-# -----------------------------
+# =============================
+# Flask Heartbeat Server (Render)
+# =============================
 app = Flask(__name__)
 
 @app.route("/")
@@ -26,9 +27,9 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
 
-# -----------------------------
+# =============================
 # Bot Setup
-# -----------------------------
+# =============================
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -36,9 +37,9 @@ intents.members = True
 CONFIG_FILE = "config.json"
 VERSE_FILE = "nkjv_verses.json"
 
-# -----------------------------
-# Loaders
-# -----------------------------
+# =============================
+# File Loaders
+# =============================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return {}
@@ -53,9 +54,9 @@ def load_verses():
     with open(VERSE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# -----------------------------
+# =============================
 # Bot Class
-# -----------------------------
+# =============================
 class MyBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents)
@@ -65,14 +66,12 @@ class MyBot(discord.Client):
         await self.tree.sync()
 
 bot = MyBot()
-
-# Load verses once
 verses = load_verses()
 
-# -----------------------------
+# =============================
 # Commands
-# -----------------------------
-@bot.tree.command(name="bible", description="Set daily Bible verse channel")
+# =============================
+@bot.tree.command(name="bible", description="Select daily Bible verse channel")
 @app_commands.describe(channel="Channel to send daily verses")
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
@@ -88,7 +87,7 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
         ephemeral=True
     )
 
-    # Send first verse immediately
+    # Send immediate verse
     verse = random.choice(verses)
 
     embed = discord.Embed(
@@ -99,9 +98,9 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
     await channel.send(embed=embed)
 
-# -----------------------------
-# Daily Verse Task
-# -----------------------------
+# =============================
+# Daily Verse Loop
+# =============================
 @tasks.loop(hours=24)
 async def daily_bible():
 
@@ -125,9 +124,9 @@ async def daily_bible():
 
         await channel.send(embed=embed)
 
-# -----------------------------
+# =============================
 # Ready Event
-# -----------------------------
+# =============================
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
@@ -135,16 +134,17 @@ async def on_ready():
     if not daily_bible.is_running():
         daily_bible.start()
 
-# -----------------------------
-# Startup
-# -----------------------------
+# =============================
+# Startup (Render Safe)
+# =============================
 if __name__ == "__main__":
 
-    # Start flask heartbeat
+    # Start Flask heartbeat
     threading.Thread(target=run_flask).start()
 
-    # Small startup delay (helps prevent rate limit login spam)
-    import time
-    time.sleep(5)
+    # Random startup delay to avoid rate limit bursts
+    time.sleep(random.randint(10, 30))
+
+    print("Starting Discord bot...")
 
     bot.run(TOKEN)
