@@ -4,13 +4,26 @@ import random
 import os
 import json
 from dotenv import load_dotenv
-import asyncio
+from flask import Flask
+import threading
 
 # -----------------------------
 # Load Token
 # -----------------------------
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+# -----------------------------
+# Flask Keep Alive Server ⭐
+# -----------------------------
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is alive"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
 
 # -----------------------------
 # Intents
@@ -23,7 +36,7 @@ VERSE_FILE = "nkjv_verses.json"
 
 
 # -----------------------------
-# Config Handling
+# Config Handling (Safe)
 # -----------------------------
 def load_config():
 
@@ -33,7 +46,19 @@ def load_config():
 
     with open(CONFIG_FILE, "r") as f:
         try:
-            return json.load(f)
+            data = json.load(f)
+
+            # Fix old format if needed
+            fixed = {}
+
+            for guild_id, settings in data.items():
+                if isinstance(settings, int):
+                    fixed[guild_id] = {"channel": settings}
+                else:
+                    fixed[guild_id] = settings
+
+            return fixed
+
         except:
             return {}
 
@@ -55,6 +80,7 @@ def load_verses():
 
 
 def get_random_verse():
+
     verses = load_verses()
 
     if not verses:
@@ -79,7 +105,6 @@ class MyBot(discord.Client):
         from discord import app_commands
         self.tree = app_commands.CommandTree(self)
 
-        # Store running tasks per guild
         self.guild_tasks = {}
 
     async def setup_hook(self):
@@ -90,7 +115,7 @@ bot = MyBot()
 
 
 # -----------------------------
-# Verse Sending Function
+# Send Verse Function
 # -----------------------------
 async def send_verse(channel):
 
@@ -112,11 +137,10 @@ async def send_verse(channel):
 
 
 # -----------------------------
-# Start Recovery Loop For Guild
+# Start Daily Loop Per Guild
 # -----------------------------
 async def start_guild_loop(guild_id, channel):
 
-    # Stop old loop if exists
     if guild_id in bot.guild_tasks:
         bot.guild_tasks[guild_id].cancel()
 
@@ -127,8 +151,11 @@ async def start_guild_loop(guild_id, channel):
         while True:
             await send_verse(channel)
 
-            # 24 hour delay
-            await asyncio.sleep(86400)
+            await discord.utils.sleep_until(
+                discord.utils.utcnow().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) + discord.utils.timedelta(days=1)
+            )
 
     bot.guild_tasks[guild_id] = bot.loop.create_task(loop_task())
 
@@ -150,31 +177,31 @@ async def bible_channel(
         config[gid] = {}
 
     config[gid]["channel"] = channel.id
+
     save_config(config)
 
-    # Send first verse immediately
     await send_verse(channel)
 
-    # Start 24 hour recovery loop
     await start_guild_loop(gid, channel)
 
     await interaction.response.send_message(
-        f"✅ Daily verses will continue in {channel.mention}",
+        f"✅ Daily verses will be sent in {channel.mention}",
         ephemeral=True
     )
 
 
 # -----------------------------
-# Auto Recovery On Startup ⭐
+# Startup Recovery ⭐
 # -----------------------------
 @bot.event
 async def on_ready():
 
     print(f"Logged in as {bot.user}")
 
+    threading.Thread(target=run_flask).start()
+
     config = load_config()
 
-    # Restart loops for all saved servers
     for guild_id, settings in config.items():
 
         if not isinstance(settings, dict):
@@ -186,8 +213,9 @@ async def on_ready():
         channel = bot.get_channel(settings["channel"])
 
         if channel:
-            print(f"Recovering verse schedule for guild {guild_id}")
             bot.loop.create_task(start_guild_loop(guild_id, channel))
+
+    print("Recovery complete")
 
 
 # -----------------------------
