@@ -221,4 +221,11 @@ async def on_ready():
 # -----------------------------
 # Run Bot
 # -----------------------------
-bot.run(TOKEN)
+import asyncio
+
+async def main():
+    await asyncio.sleep(10)  # ⬅ Prevents startup spam
+    await bot.start(TOKEN)
+
+asyncio.run(main())
+
