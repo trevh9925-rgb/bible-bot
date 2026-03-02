@@ -27,8 +27,11 @@ CONFIG_FILE = "config.json"
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return {}
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_config(data):
     with open(CONFIG_FILE, "w") as f:
@@ -48,8 +51,7 @@ class MyBot(discord.Client):
 bot = MyBot()
 
 # =============================
-# Bible Verses (Sample)
-# Expand this list if you want
+# Bible Verses
 # =============================
 verses = [
     "John 3:16 - For God so loved the world...",
@@ -101,7 +103,10 @@ async def daily_bible():
             color=0x2ecc71
         )
 
-        await channel.send(embed=embed)
+        try:
+            await channel.send(embed=embed)
+        except:
+            pass
 
 # =============================
 # Ready Event
