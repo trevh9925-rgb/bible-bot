@@ -4,11 +4,7 @@ from discord.ext import tasks
 import random
 import os
 import json
-import time
-import threading
-import asyncio
 from dotenv import load_dotenv
-from flask import Flask
 
 # =============================
 # Load Token
@@ -17,19 +13,14 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # =============================
-# Flask Heartbeat Server
+# Bot Intents
 # =============================
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bible Bot Running"
-
-def run_flask():
-    app.run(host="0.0.0.0", port=8080)
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
 
 # =============================
-# Config System
+# Config File
 # =============================
 CONFIG_FILE = "config.json"
 
@@ -44,12 +35,8 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 # =============================
-# Bot Setup
+# Bot Class
 # =============================
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
 class MyBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents)
@@ -61,7 +48,8 @@ class MyBot(discord.Client):
 bot = MyBot()
 
 # =============================
-# Verses
+# Bible Verses (Sample)
+# Expand this list if you want
 # =============================
 verses = [
     "John 3:16 - For God so loved the world...",
@@ -71,10 +59,10 @@ verses = [
 ]
 
 # =============================
-# Commands
+# Slash Command
 # =============================
-@bot.tree.command(name="bible", description="Select Bible verse channel")
-@app_commands.describe(channel="Channel for daily verses")
+@bot.tree.command(name="bible", description="Set channel for daily Bible verses")
+@app_commands.describe(channel="Channel to send daily verses")
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
     config = load_config()
@@ -85,12 +73,12 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
     save_config(config)
 
     await interaction.response.send_message(
-        f"✅ Daily Bible verses will now be sent in {channel.mention}",
+        f"✅ Daily verses will be sent in {channel.mention}",
         ephemeral=True
     )
 
 # =============================
-# Daily Verse Loop
+# Daily Loop
 # =============================
 @tasks.loop(hours=24)
 async def daily_bible():
@@ -126,24 +114,7 @@ async def on_ready():
         daily_bible.start()
 
 # =============================
-# Safe Render Login Loop
-# (Prevents 429 Rate Limit Login Spam)
-# =============================
-async def safe_start():
-    while True:
-        try:
-            await bot.start(TOKEN)
-        except Exception as e:
-            print(f"Bot restart after error: {e}")
-            await asyncio.sleep(60)
-
-# =============================
-# Main Startup
+# Run Bot
 # =============================
 if __name__ == "__main__":
-
-    threading.Thread(target=run_flask).start()
-
-    time.sleep(random.randint(5, 15))
-
-    asyncio.run(safe_start())
+    bot.run(TOKEN)
