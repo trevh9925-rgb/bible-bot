@@ -20,10 +20,14 @@ intents.message_content = True
 intents.members = True
 
 # =============================
-# Config File
+# Files
 # =============================
 CONFIG_FILE = "config.json"
+NKJV_FILE = "nkjv_verses.json"
 
+# =============================
+# Load Config
+# =============================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return {}
@@ -36,6 +40,19 @@ def load_config():
 def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
+
+# =============================
+# Load Verses From JSON
+# =============================
+def load_verses():
+    if not os.path.exists(NKJV_FILE):
+        return []
+
+    try:
+        with open(NKJV_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return []
 
 # =============================
 # Bot Class
@@ -51,14 +68,33 @@ class MyBot(discord.Client):
 bot = MyBot()
 
 # =============================
-# Bible Verses
+# Helper Function To Send Verse
 # =============================
-verses = [
-    "John 3:16 - For God so loved the world...",
-    "Philippians 4:13 - I can do all things through Christ...",
-    "Psalm 23:1 - The Lord is my shepherd...",
-    "Romans 8:28 - And we know that in all things..."
-]
+async def send_random_verse(channel: discord.TextChannel):
+    verses_list = load_verses()
+
+    if not verses_list:
+        return
+
+    verse_data = random.choice(verses_list)
+
+    book = verse_data.get("book", "Unknown Book")
+    chapter = verse_data.get("chapter", "?")
+    verse = verse_data.get("verse", "?")
+    text = verse_data.get("text", "No text available")
+
+    verse_text = f"{book} {chapter}:{verse} - {text}"
+
+    embed = discord.Embed(
+        title="📖 Daily Bible Verse",
+        description=verse_text,
+        color=0x2ecc71
+    )
+
+    try:
+        await channel.send(embed=embed)
+    except:
+        pass
 
 # =============================
 # Slash Command
@@ -75,18 +111,7 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
     save_config(config)
 
     # Send immediate verse
-    verse = random.choice(verses)
-
-    embed = discord.Embed(
-        title="📖 Daily Bible Verse",
-        description=verse,
-        color=0x2ecc71
-    )
-
-    try:
-        await channel.send(embed=embed)
-    except:
-        pass
+    await send_random_verse(channel)
 
     await interaction.response.send_message(
         f"✅ Daily verses will now be sent in {channel.mention}",
@@ -94,7 +119,7 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
     )
 
 # =============================
-# Daily Loop (24 Hour Posting)
+# Daily Loop
 # =============================
 @tasks.loop(hours=24)
 async def daily_bible():
@@ -109,18 +134,7 @@ async def daily_bible():
         if not channel:
             continue
 
-        verse = random.choice(verses)
-
-        embed = discord.Embed(
-            title="📖 Daily Bible Verse",
-            description=verse,
-            color=0x2ecc71
-        )
-
-        try:
-            await channel.send(embed=embed)
-        except:
-            pass
+        await send_random_verse(channel)
 
 # =============================
 # Ready Event
