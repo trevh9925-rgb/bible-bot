@@ -74,13 +74,27 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
     save_config(config)
 
+    # Send immediate verse
+    verse = random.choice(verses)
+
+    embed = discord.Embed(
+        title="📖 Daily Bible Verse",
+        description=verse,
+        color=0x2ecc71
+    )
+
+    try:
+        await channel.send(embed=embed)
+    except:
+        pass
+
     await interaction.response.send_message(
-        f"✅ Daily verses will be sent in {channel.mention}",
+        f"✅ Daily verses will now be sent in {channel.mention}",
         ephemeral=True
     )
 
 # =============================
-# Daily Loop
+# Daily Loop (24 Hour Posting)
 # =============================
 @tasks.loop(hours=24)
 async def daily_bible():
