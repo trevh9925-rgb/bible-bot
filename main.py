@@ -79,7 +79,7 @@ def create_verse_embed(title):
     return embed
 
 # =============================
-# BUTTON VIEW
+# BUTTON VIEW (NEW MESSAGE SEND)
 # =============================
 class RandomVerseView(discord.ui.View):
 
@@ -95,9 +95,10 @@ class RandomVerseView(discord.ui.View):
         embed = create_verse_embed("📖 Random Bible Verse")
 
         if embed:
-            await interaction.response.edit_message(
+            # Send NEW message instead of editing
+            await interaction.response.send_message(
                 embed=embed,
-                view=self
+                view=RandomVerseView()
             )
 
 # =============================
@@ -166,7 +167,6 @@ async def daily_checker():
 
     now = datetime.now(timezone.utc)
 
-    # Broadcast once per hour/minute match
     if now.hour == DAILY_SEND_HOUR_UTC and now.minute == 0:
 
         print("Sending daily devotional broadcast...")
@@ -174,7 +174,6 @@ async def daily_checker():
         try:
             await broadcast_daily_verse()
 
-            # Prevent duplicate sending
             await discord.utils.sleep_until(
                 now + timedelta(seconds=61)
             )
@@ -183,7 +182,7 @@ async def daily_checker():
             print(f"Broadcast error: {e}")
 
 # =============================
-# ON READY (AUTO RESUB RECOVERY)
+# ON READY (RECOVERY + RESUB)
 # =============================
 @bot.event
 async def on_ready():
@@ -201,8 +200,6 @@ async def on_ready():
 
             if channel:
                 valid_subs[guild_id] = data
-            else:
-                print(f"Removed invalid subscription: {guild_id}")
 
         save_subs(valid_subs)
 
@@ -214,7 +211,7 @@ async def on_ready():
     if not daily_checker.is_running():
         daily_checker.start()
 
-    print("Bot is ready.")
+    print("Bot ready.")
 
 # =============================
 # /bible COMMAND
@@ -223,7 +220,6 @@ async def on_ready():
     name="bible",
     description="Subscribe a channel to daily Bible verses"
 )
-@app_commands.describe(channel="Channel to send daily verses")
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
     subs = load_subs()
