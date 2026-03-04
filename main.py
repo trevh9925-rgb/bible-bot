@@ -8,26 +8,26 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
 # =============================
-# Load Token
+# LOAD TOKEN
 # =============================
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # =============================
-# Bot Intents
+# BOT INTENTS
 # =============================
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 # =============================
-# Files
+# FILES
 # =============================
 CONFIG_FILE = "config.json"
 NKJV_FILE = "nkjv_verses.json"
 
 # =============================
-# Load / Save Config
+# CONFIG HANDLING
 # =============================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -43,12 +43,11 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 # =============================
-# Load Verses
+# LOAD VERSES
 # =============================
 def load_verses():
     if not os.path.exists(NKJV_FILE):
         return []
-
     try:
         with open(NKJV_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -56,20 +55,19 @@ def load_verses():
         return []
 
 # =============================
-# Create Verse Embed
+# CREATE VERSE EMBED
 # =============================
-def create_verse_embed(title="📖 Bible Verse"):
-    verses_list = load_verses()
-
-    if not verses_list:
+def create_verse_embed(title):
+    verses = load_verses()
+    if not verses:
         return None
 
-    verse_data = random.choice(verses_list)
+    verse = random.choice(verses)
 
-    book = verse_data.get("book", "Unknown Book")
-    chapter = verse_data.get("chapter", "?")
-    verse = verse_data.get("verse", "?")
-    text = verse_data.get("text", "No text available")
+    book = verse.get("book", "Unknown Book")
+    chapter = verse.get("chapter", "?")
+    verse_num = verse.get("verse", "?")
+    text = verse.get("text", "No text available")
 
     embed = discord.Embed(
         title=title,
@@ -77,25 +75,28 @@ def create_verse_embed(title="📖 Bible Verse"):
         color=0x2ecc71
     )
 
-    embed.set_footer(text=f"{book} {chapter}:{verse} (NKJV)")
-
+    embed.set_footer(text=f"{book} {chapter}:{verse_num} (NKJV)")
     return embed
 
 # =============================
-# Button View For Random Verse
+# BUTTON VIEW
 # =============================
 class RandomVerseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Get Another Verse", style=discord.ButtonStyle.green)
-    async def another_verse(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Get Another Verse",
+        style=discord.ButtonStyle.green
+    )
+    async def reroll(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = create_verse_embed("📖 Random Bible Verse")
+
         if embed:
             await interaction.response.edit_message(embed=embed, view=self)
 
 # =============================
-# Bot Class
+# BOT CLASS
 # =============================
 class MyBot(discord.Client):
     def __init__(self):
@@ -103,25 +104,30 @@ class MyBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
+        # Global sync (IMPORTANT)
         await self.tree.sync()
 
 bot = MyBot()
 
 # =============================
-# Send Verse To Channel (Daily)
+# SEND DAILY VERSE
 # =============================
-async def send_random_verse(channel: discord.TextChannel):
+async def send_random_verse(channel):
     embed = create_verse_embed("📖 Daily Bible Verse")
+
     if embed:
         try:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, view=RandomVerseView())
         except:
             pass
 
 # =============================
-# Slash Command - Set Daily Channel
+# /bible COMMAND
 # =============================
-@bot.tree.command(name="bible", description="Set channel for daily Bible verses")
+@bot.tree.command(
+    name="bible",
+    description="Set daily Bible verse channel"
+)
 @app_commands.describe(channel="Channel to send daily verses")
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
@@ -140,21 +146,24 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
     await send_random_verse(channel)
 
     await interaction.response.send_message(
-        f"✅ Daily verses will now be sent in {channel.mention}",
+        f"✅ Daily verses enabled in {channel.mention}",
         ephemeral=True
     )
 
 # =============================
-# Slash Command - Random Verse
+# /random COMMAND
 # =============================
-@bot.tree.command(name="random", description="Get a random Bible verse instantly")
+@bot.tree.command(
+    name="random",
+    description="Get a random Bible verse"
+)
 async def random_verse(interaction: discord.Interaction):
 
     embed = create_verse_embed("📖 Random Bible Verse")
 
     if not embed:
         await interaction.response.send_message(
-            "❌ No verses found in nkjv_verses.json.",
+            "No verses found in nkjv_verses.json",
             ephemeral=True
         )
         return
@@ -165,7 +174,7 @@ async def random_verse(interaction: discord.Interaction):
     )
 
 # =============================
-# Persistent Daily Checker
+# DAILY TIMER LOOP
 # =============================
 @tasks.loop(minutes=5)
 async def daily_checker():
@@ -193,15 +202,14 @@ async def daily_checker():
             if channel:
                 await send_random_verse(channel)
 
-            new_next_send = now + timedelta(hours=24)
-            config[guild_id]["next_send"] = new_next_send.isoformat()
+            config[guild_id]["next_send"] = (now + timedelta(hours=24)).isoformat()
             updated = True
 
     if updated:
         save_config(config)
 
 # =============================
-# Ready Event
+# READY EVENT
 # =============================
 @bot.event
 async def on_ready():
@@ -211,7 +219,7 @@ async def on_ready():
         daily_checker.start()
 
 # =============================
-# Run Bot
+# RUN BOT
 # =============================
 if __name__ == "__main__":
     bot.run(TOKEN)
