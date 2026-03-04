@@ -5,6 +5,7 @@ import random
 import os
 import json
 from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
 
 # =============================
 # Load Token
@@ -26,7 +27,7 @@ CONFIG_FILE = "config.json"
 NKJV_FILE = "nkjv_verses.json"
 
 # =============================
-# Load Config
+# Load / Save Config
 # =============================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -42,7 +43,7 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 # =============================
-# Load Verses From JSON
+# Load Verses
 # =============================
 def load_verses():
     if not os.path.exists(NKJV_FILE):
@@ -53,6 +54,45 @@ def load_verses():
             return json.load(f)
     except:
         return []
+
+# =============================
+# Create Verse Embed
+# =============================
+def create_verse_embed(title="📖 Bible Verse"):
+    verses_list = load_verses()
+
+    if not verses_list:
+        return None
+
+    verse_data = random.choice(verses_list)
+
+    book = verse_data.get("book", "Unknown Book")
+    chapter = verse_data.get("chapter", "?")
+    verse = verse_data.get("verse", "?")
+    text = verse_data.get("text", "No text available")
+
+    embed = discord.Embed(
+        title=title,
+        description=text,
+        color=0x2ecc71
+    )
+
+    embed.set_footer(text=f"{book} {chapter}:{verse} (NKJV)")
+
+    return embed
+
+# =============================
+# Button View For Random Verse
+# =============================
+class RandomVerseView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Get Another Verse", style=discord.ButtonStyle.green)
+    async def another_verse(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = create_verse_embed("📖 Random Bible Verse")
+        if embed:
+            await interaction.response.edit_message(embed=embed, view=self)
 
 # =============================
 # Bot Class
@@ -68,49 +108,35 @@ class MyBot(discord.Client):
 bot = MyBot()
 
 # =============================
-# Helper Function To Send Verse
+# Send Verse To Channel (Daily)
 # =============================
 async def send_random_verse(channel: discord.TextChannel):
-    verses_list = load_verses()
-
-    if not verses_list:
-        return
-
-    verse_data = random.choice(verses_list)
-
-    book = verse_data.get("book", "Unknown Book")
-    chapter = verse_data.get("chapter", "?")
-    verse = verse_data.get("verse", "?")
-    text = verse_data.get("text", "No text available")
-
-    verse_text = f"{book} {chapter}:{verse} - {text}"
-
-    embed = discord.Embed(
-        title="📖 Daily Bible Verse",
-        description=verse_text,
-        color=0x2ecc71
-    )
-
-    try:
-        await channel.send(embed=embed)
-    except:
-        pass
+    embed = create_verse_embed("📖 Daily Bible Verse")
+    if embed:
+        try:
+            await channel.send(embed=embed)
+        except:
+            pass
 
 # =============================
-# Slash Command
+# Slash Command - Set Daily Channel
 # =============================
 @bot.tree.command(name="bible", description="Set channel for daily Bible verses")
 @app_commands.describe(channel="Channel to send daily verses")
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
     config = load_config()
-
     guild_id = str(interaction.guild.id)
-    config[guild_id] = channel.id
+
+    next_send = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    config[guild_id] = {
+        "channel_id": channel.id,
+        "next_send": next_send.isoformat()
+    }
 
     save_config(config)
 
-    # Send immediate verse
     await send_random_verse(channel)
 
     await interaction.response.send_message(
@@ -119,22 +145,60 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
     )
 
 # =============================
-# Daily Loop
+# Slash Command - Random Verse
 # =============================
-@tasks.loop(hours=24)
-async def daily_bible():
+@bot.tree.command(name="random", description="Get a random Bible verse instantly")
+async def random_verse(interaction: discord.Interaction):
+
+    embed = create_verse_embed("📖 Random Bible Verse")
+
+    if not embed:
+        await interaction.response.send_message(
+            "❌ No verses found in nkjv_verses.json.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        embed=embed,
+        view=RandomVerseView()
+    )
+
+# =============================
+# Persistent Daily Checker
+# =============================
+@tasks.loop(minutes=5)
+async def daily_checker():
 
     await bot.wait_until_ready()
 
     config = load_config()
+    now = datetime.now(timezone.utc)
 
-    for guild_id, channel_id in config.items():
+    updated = False
 
-        channel = bot.get_channel(int(channel_id))
-        if not channel:
+    for guild_id, data in config.items():
+
+        channel_id = data.get("channel_id")
+        next_send_str = data.get("next_send")
+
+        if not channel_id or not next_send_str:
             continue
 
-        await send_random_verse(channel)
+        next_send = datetime.fromisoformat(next_send_str)
+
+        if now >= next_send:
+
+            channel = bot.get_channel(int(channel_id))
+            if channel:
+                await send_random_verse(channel)
+
+            new_next_send = now + timedelta(hours=24)
+            config[guild_id]["next_send"] = new_next_send.isoformat()
+            updated = True
+
+    if updated:
+        save_config(config)
 
 # =============================
 # Ready Event
@@ -143,8 +207,8 @@ async def daily_bible():
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-    if not daily_bible.is_running():
-        daily_bible.start()
+    if not daily_checker.is_running():
+        daily_checker.start()
 
 # =============================
 # Run Bot
