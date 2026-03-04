@@ -21,7 +21,7 @@ intents.message_content = True
 intents.members = True
 
 # =============================
-# FILES
+# FILE STORAGE
 # =============================
 CONFIG_FILE = "config.json"
 NKJV_FILE = "nkjv_verses.json"
@@ -43,7 +43,7 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 # =============================
-# LOAD VERSES
+# VERSE LOADING
 # =============================
 def load_verses():
     if not os.path.exists(NKJV_FILE):
@@ -55,7 +55,7 @@ def load_verses():
         return []
 
 # =============================
-# CREATE VERSE EMBED
+# EMBED CREATION
 # =============================
 def create_verse_embed(title):
     verses = load_verses()
@@ -93,10 +93,13 @@ class RandomVerseView(discord.ui.View):
         embed = create_verse_embed("📖 Random Bible Verse")
 
         if embed:
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(
+                embed=embed,
+                view=self
+            )
 
 # =============================
-# BOT CLASS
+# BOT CLASS (COMMAND SYNC FIXED)
 # =============================
 class MyBot(discord.Client):
     def __init__(self):
@@ -104,13 +107,19 @@ class MyBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # Global sync (IMPORTANT)
-        await self.tree.sync()
+        print("Syncing slash commands...")
+
+        try:
+            await self.tree.sync()
+            print("Slash commands synced globally!")
+
+        except Exception as e:
+            print(f"Sync error: {e}")
 
 bot = MyBot()
 
 # =============================
-# SEND DAILY VERSE
+# DAILY VERSE SENDER
 # =============================
 async def send_random_verse(channel):
     embed = create_verse_embed("📖 Daily Bible Verse")
@@ -146,7 +155,7 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
     await send_random_verse(channel)
 
     await interaction.response.send_message(
-        f"✅ Daily verses enabled in {channel.mention}",
+        f"✅ Daily Bible verses enabled in {channel.mention}",
         ephemeral=True
     )
 
@@ -174,7 +183,7 @@ async def random_verse(interaction: discord.Interaction):
     )
 
 # =============================
-# DAILY TIMER LOOP
+# DAILY LOOP SYSTEM
 # =============================
 @tasks.loop(minutes=5)
 async def daily_checker():
@@ -199,10 +208,14 @@ async def daily_checker():
         if now >= next_send:
 
             channel = bot.get_channel(int(channel_id))
+
             if channel:
                 await send_random_verse(channel)
 
-            config[guild_id]["next_send"] = (now + timedelta(hours=24)).isoformat()
+            config[guild_id]["next_send"] = (
+                now + timedelta(hours=24)
+            ).isoformat()
+
             updated = True
 
     if updated:
@@ -217,6 +230,8 @@ async def on_ready():
 
     if not daily_checker.is_running():
         daily_checker.start()
+
+    print("Bot fully ready.")
 
 # =============================
 # RUN BOT
