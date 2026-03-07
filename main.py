@@ -5,69 +5,68 @@ import random
 import os
 import json
 from dotenv import load_dotenv
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 # =============================
-# CONFIG
+# LOAD TOKEN
 # =============================
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-DAILY_SEND_HOUR_UTC = 12
-
 # =============================
-# FILE STORAGE
-# =============================
-SUB_FILE = "subscriptions.json"
-NKJV_FILE = "nkjv_verses.json"
-
-# =============================
-# INTENTS
+# BOT INTENTS
 # =============================
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
 
 # =============================
-# STORAGE HELPERS
+# FILES
 # =============================
-def load_subs():
-    if not os.path.exists(SUB_FILE):
-        return {}
-    try:
-        with open(SUB_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+CONFIG_FILE = "config.json"
+VERSES_FILE = "nkjv_verses.json"
 
-def save_subs(data):
-    with open(SUB_FILE, "w") as f:
+# =============================
+# LOAD CONFIG
+# =============================
+def load_config():
+    if not os.path.exists(CONFIG_FILE):
+        return {}
+    with open(CONFIG_FILE, "r") as f:
+        return json.load(f)
+
+# =============================
+# SAVE CONFIG
+# =============================
+def save_config(data):
+    with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# =============================
+# LOAD VERSES
+# =============================
 def load_verses():
-    if not os.path.exists(NKJV_FILE):
-        return []
-    try:
-        with open(NKJV_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
+    if not os.path.exists(VERSES_FILE):
         return []
 
+    with open(VERSES_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
 # =============================
-# EMBED BUILDER
+# CREATE EMBED
 # =============================
 def create_verse_embed(title):
 
     verses = load_verses()
+
     if not verses:
         return None
 
     verse = random.choice(verses)
 
-    book = verse.get("book", "Unknown Book")
-    chapter = verse.get("chapter", "?")
-    verse_num = verse.get("verse", "?")
-    text = verse.get("text", "No text available")
+    book = verse.get("book")
+    chapter = verse.get("chapter")
+    verse_num = verse.get("verse")
+    text = verse.get("text")
 
     embed = discord.Embed(
         title=title,
@@ -76,185 +75,92 @@ def create_verse_embed(title):
     )
 
     embed.set_footer(text=f"{book} {chapter}:{verse_num} (NKJV)")
+
     return embed
 
 # =============================
-# BUTTON VIEW (NEW MESSAGE SEND)
+# RANDOM BUTTON VIEW
 # =============================
 class RandomVerseView(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(
-        label="Get Another Verse",
-        style=discord.ButtonStyle.green
-    )
-    async def reroll(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="Get Another Verse", style=discord.ButtonStyle.green)
+    async def another(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         embed = create_verse_embed("📖 Random Bible Verse")
 
         if embed:
-            # Send NEW message instead of editing
-            await interaction.response.send_message(
-                embed=embed,
-                view=RandomVerseView()
-            )
+            await interaction.response.edit_message(embed=embed, view=self)
 
 # =============================
 # BOT CLASS
 # =============================
-class MyBot(discord.Client):
+class BibleBot(discord.Client):
 
     def __init__(self):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        print("Syncing commands...")
         await self.tree.sync()
-        print("Commands synced.")
 
-bot = MyBot()
-
-# =============================
-# BROADCAST FUNCTION
-# =============================
-async def broadcast_daily_verse():
-
-    verses = load_verses()
-    if not verses:
-        return
-
-    verse = random.choice(verses)
-
-    book = verse.get("book", "Unknown Book")
-    chapter = verse.get("chapter", "?")
-    verse_num = verse.get("verse", "?")
-    text = verse.get("text", "No text available")
-
-    embed = discord.Embed(
-        title="📖 Daily Bible Verse",
-        description=text,
-        color=0x2ecc71
-    )
-
-    embed.set_footer(text=f"{book} {chapter}:{verse_num} (NKJV)")
-
-    subs = load_subs()
-
-    for guild_id, data in subs.items():
-
-        channel_id = data.get("channel_id")
-        if not channel_id:
-            continue
-
-        channel = bot.get_channel(int(channel_id))
-
-        if channel:
-            try:
-                await channel.send(embed=embed, view=RandomVerseView())
-            except:
-                pass
+bot = BibleBot()
 
 # =============================
-# AUTO RECOVERY DAILY LOOP
+# SEND VERSE
 # =============================
-@tasks.loop(seconds=30)
-async def daily_checker():
+async def send_daily_verse(channel):
 
-    await bot.wait_until_ready()
+    embed = create_verse_embed("📖 Daily Bible Verse")
 
-    now = datetime.now(timezone.utc)
-
-    if now.hour == DAILY_SEND_HOUR_UTC and now.minute == 0:
-
-        print("Sending daily devotional broadcast...")
-
+    if embed:
         try:
-            await broadcast_daily_verse()
-
-            await discord.utils.sleep_until(
-                now + timedelta(seconds=61)
-            )
-
-        except Exception as e:
-            print(f"Broadcast error: {e}")
-
-# =============================
-# ON READY (RECOVERY + RESUB)
-# =============================
-@bot.event
-async def on_ready():
-
-    print(f"Logged in as {bot.user}")
-
-    # Validate subscriptions
-    try:
-        subs = load_subs()
-        valid_subs = {}
-
-        for guild_id, data in subs.items():
-
-            channel = bot.get_channel(int(data["channel_id"]))
-
-            if channel:
-                valid_subs[guild_id] = data
-
-        save_subs(valid_subs)
-
-        print("Subscription recovery completed.")
-
-    except Exception as e:
-        print(f"Recovery error: {e}")
-
-    if not daily_checker.is_running():
-        daily_checker.start()
-
-    print("Bot ready.")
+            await channel.send(embed=embed)
+        except:
+            pass
 
 # =============================
 # /bible COMMAND
 # =============================
-@bot.tree.command(
-    name="bible",
-    description="Subscribe a channel to daily Bible verses"
-)
+@bot.tree.command(name="bible", description="Set the channel for daily Bible verses")
+@app_commands.describe(channel="Channel for daily Bible verses")
+
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
-    subs = load_subs()
+    config = load_config()
 
-    subs[str(interaction.guild.id)] = {
-        "channel_id": channel.id
+    guild_id = str(interaction.guild.id)
+
+    next_send = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    config[guild_id] = {
+        "channel_id": channel.id,
+        "next_send": next_send.isoformat()
     }
 
-    save_subs(subs)
+    save_config(config)
 
-    # Instant verse send
-    embed = create_verse_embed("📖 Daily Bible Verse")
-
-    if embed:
-        await channel.send(embed=embed, view=RandomVerseView())
+    await send_daily_verse(channel)
 
     await interaction.response.send_message(
-        f"✅ Subscribed daily verses to {channel.mention}",
+        f"✅ Daily verses will now be sent in {channel.mention}",
         ephemeral=True
     )
 
 # =============================
 # /random COMMAND
 # =============================
-@bot.tree.command(
-    name="random",
-    description="Get a random Bible verse"
-)
+@bot.tree.command(name="random", description="Get a random Bible verse")
+
 async def random_verse(interaction: discord.Interaction):
 
     embed = create_verse_embed("📖 Random Bible Verse")
 
     if not embed:
         await interaction.response.send_message(
-            "No verses available.",
+            "No verses found.",
             ephemeral=True
         )
         return
@@ -265,7 +171,63 @@ async def random_verse(interaction: discord.Interaction):
     )
 
 # =============================
+# DAILY CHECK LOOP
+# =============================
+@tasks.loop(minutes=5)
+async def daily_checker():
+
+    await bot.wait_until_ready()
+
+    config = load_config()
+
+    now = datetime.now(timezone.utc)
+
+    updated = False
+
+    for guild_id, data in config.items():
+
+        channel_id = data.get("channel_id")
+        next_send_str = data.get("next_send")
+
+        if not channel_id or not next_send_str:
+            continue
+
+        next_send = datetime.fromisoformat(next_send_str)
+
+        if now >= next_send:
+
+            channel = bot.get_channel(int(channel_id))
+
+            if channel is None:
+                try:
+                    channel = await bot.fetch_channel(int(channel_id))
+                except:
+                    continue
+
+            await send_daily_verse(channel)
+
+            new_next = now + timedelta(hours=24)
+
+            config[guild_id]["next_send"] = new_next.isoformat()
+
+            updated = True
+
+    if updated:
+        save_config(config)
+
+# =============================
+# READY EVENT
+# =============================
+@bot.event
+async def on_ready():
+
+    print(f"Logged in as {bot.user}")
+
+    if not daily_checker.is_running():
+        daily_checker.start()
+
+# =============================
 # RUN BOT
 # =============================
-if __name__ == "__main__":
-    bot.run(TOKEN)
+bot.run(TOKEN)
+
