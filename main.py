@@ -13,6 +13,9 @@ from datetime import datetime, timedelta, timezone
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+if not TOKEN:
+    raise ValueError("DISCORD_TOKEN not found in environment variables")
+
 # =============================
 # BOT INTENTS
 # =============================
@@ -26,30 +29,42 @@ CONFIG_FILE = "config.json"
 VERSES_FILE = "nkjv_verses.json"
 
 # =============================
-# LOAD CONFIG
+# LOAD CONFIG (SAFE)
 # =============================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return {}
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print("Config load error:", e)
+        return {}
 
 # =============================
 # SAVE CONFIG
 # =============================
 def save_config(data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print("Config save error:", e)
 
 # =============================
-# LOAD VERSES
+# LOAD VERSES (SAFE)
 # =============================
 def load_verses():
     if not os.path.exists(VERSES_FILE):
         return []
 
-    with open(VERSES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(VERSES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print("Verse file error:", e)
+        return []
 
 # =============================
 # CREATE EMBED
@@ -118,8 +133,8 @@ async def send_daily_verse(channel):
     if embed:
         try:
             await channel.send(embed=embed)
-        except:
-            pass
+        except Exception as e:
+            print("Send verse error:", e)
 
 # =============================
 # /bible COMMAND
@@ -192,7 +207,10 @@ async def daily_checker():
         if not channel_id or not next_send_str:
             continue
 
-        next_send = datetime.fromisoformat(next_send_str)
+        try:
+            next_send = datetime.fromisoformat(next_send_str)
+        except:
+            continue
 
         if now >= next_send:
 
@@ -230,4 +248,3 @@ async def on_ready():
 # RUN BOT
 # =============================
 bot.run(TOKEN)
-
