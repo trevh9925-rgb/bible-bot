@@ -14,7 +14,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not TOKEN:
-    raise ValueError("DISCORD_TOKEN not found in environment variables")
+    raise RuntimeError("DISCORD_TOKEN not found in environment variables")
 
 # =============================
 # BOT INTENTS
@@ -25,32 +25,37 @@ intents.message_content = True
 # =============================
 # FILES
 # =============================
-CONFIG_FILE = "config.json"
+SUB_FILE = "subscriptions.json"
 VERSES_FILE = "nkjv_verses.json"
 
 # =============================
-# LOAD CONFIG (SAFE)
+# LOAD SUBSCRIPTIONS (SAFE)
 # =============================
-def load_config():
-    if not os.path.exists(CONFIG_FILE):
+def load_subscriptions():
+    if not os.path.exists(SUB_FILE):
+        with open(SUB_FILE, "w") as f:
+            json.dump({}, f)
         return {}
 
     try:
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
+        with open(SUB_FILE, "r") as f:
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
     except Exception as e:
-        print("Config load error:", e)
+        print("Subscription load error:", e)
         return {}
 
 # =============================
-# SAVE CONFIG
+# SAVE SUBSCRIPTIONS
 # =============================
-def save_config(data):
+def save_subscriptions(data):
     try:
-        with open(CONFIG_FILE, "w") as f:
+        with open(SUB_FILE, "w") as f:
             json.dump(data, f, indent=4)
     except Exception as e:
-        print("Config save error:", e)
+        print("Subscription save error:", e)
 
 # =============================
 # LOAD VERSES (SAFE)
@@ -61,9 +66,12 @@ def load_verses():
 
     try:
         with open(VERSES_FILE, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if not content:
+                return []
             return json.load(f)
     except Exception as e:
-        print("Verse file error:", e)
+        print("Verse load error:", e)
         return []
 
 # =============================
@@ -127,7 +135,6 @@ bot = BibleBot()
 # SEND VERSE
 # =============================
 async def send_daily_verse(channel):
-
     embed = create_verse_embed("📖 Daily Bible Verse")
 
     if embed:
@@ -141,22 +148,21 @@ async def send_daily_verse(channel):
 # =============================
 @bot.tree.command(name="bible", description="Set the channel for daily Bible verses")
 @app_commands.describe(channel="Channel for daily Bible verses")
-
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
-    config = load_config()
+    subs = load_subscriptions()
 
     guild_id = str(interaction.guild.id)
-
     next_send = datetime.now(timezone.utc) + timedelta(hours=24)
 
-    config[guild_id] = {
+    subs[guild_id] = {
         "channel_id": channel.id,
         "next_send": next_send.isoformat()
     }
 
-    save_config(config)
+    save_subscriptions(subs)
 
+    # Send immediately
     await send_daily_verse(channel)
 
     await interaction.response.send_message(
@@ -168,7 +174,6 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 # /random COMMAND
 # =============================
 @bot.tree.command(name="random", description="Get a random Bible verse")
-
 async def random_verse(interaction: discord.Interaction):
 
     embed = create_verse_embed("📖 Random Bible Verse")
@@ -193,13 +198,11 @@ async def daily_checker():
 
     await bot.wait_until_ready()
 
-    config = load_config()
-
+    subs = load_subscriptions()
     now = datetime.now(timezone.utc)
-
     updated = False
 
-    for guild_id, data in config.items():
+    for guild_id, data in subs.items():
 
         channel_id = data.get("channel_id")
         next_send_str = data.get("next_send")
@@ -215,7 +218,6 @@ async def daily_checker():
         if now >= next_send:
 
             channel = bot.get_channel(int(channel_id))
-
             if channel is None:
                 try:
                     channel = await bot.fetch_channel(int(channel_id))
@@ -225,22 +227,18 @@ async def daily_checker():
             await send_daily_verse(channel)
 
             new_next = now + timedelta(hours=24)
-
-            config[guild_id]["next_send"] = new_next.isoformat()
-
+            subs[guild_id]["next_send"] = new_next.isoformat()
             updated = True
 
     if updated:
-        save_config(config)
+        save_subscriptions(subs)
 
 # =============================
 # READY EVENT
 # =============================
 @bot.event
 async def on_ready():
-
     print(f"Logged in as {bot.user}")
-
     if not daily_checker.is_running():
         daily_checker.start()
 
