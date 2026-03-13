@@ -13,9 +13,6 @@ from datetime import datetime, timedelta, timezone
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN not found in environment variables")
-
 # =============================
 # BOT INTENTS
 # =============================
@@ -29,9 +26,15 @@ SUB_FILE = "subscriptions.json"
 VERSES_FILE = "nkjv_verses.json"
 
 # =============================
-# LOAD SUBSCRIPTIONS (SAFE)
+# DAILY LOCK
+# =============================
+last_sent_date = None
+
+# =============================
+# LOAD SUBSCRIPTIONS
 # =============================
 def load_subscriptions():
+
     if not os.path.exists(SUB_FILE):
         with open(SUB_FILE, "w") as f:
             json.dump({}, f)
@@ -39,43 +42,33 @@ def load_subscriptions():
 
     try:
         with open(SUB_FILE, "r") as f:
-            content = f.read().strip()
-            if not content:
-                return {}
-            return json.loads(content)
-    except Exception as e:
-        print("Subscription load error:", e)
+            return json.load(f)
+    except:
         return {}
 
 # =============================
 # SAVE SUBSCRIPTIONS
 # =============================
 def save_subscriptions(data):
-    try:
-        with open(SUB_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print("Subscription save error:", e)
+    with open(SUB_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
 # =============================
-# LOAD VERSES (SAFE)
+# LOAD VERSES
 # =============================
 def load_verses():
+
     if not os.path.exists(VERSES_FILE):
         return []
 
     try:
         with open(VERSES_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return []
             return json.load(f)
-    except Exception as e:
-        print("Verse load error:", e)
+    except:
         return []
 
 # =============================
-# CREATE EMBED
+# CREATE VERSE EMBED
 # =============================
 def create_verse_embed(title):
 
@@ -132,37 +125,37 @@ class BibleBot(discord.Client):
 bot = BibleBot()
 
 # =============================
-# SEND VERSE
+# SEND DAILY VERSE
 # =============================
 async def send_daily_verse(channel):
+
     embed = create_verse_embed("📖 Daily Bible Verse")
 
     if embed:
         try:
             await channel.send(embed=embed)
-        except Exception as e:
-            print("Send verse error:", e)
+        except:
+            pass
 
 # =============================
 # /bible COMMAND
 # =============================
 @bot.tree.command(name="bible", description="Set the channel for daily Bible verses")
 @app_commands.describe(channel="Channel for daily Bible verses")
+
 async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 
     subs = load_subscriptions()
 
     guild_id = str(interaction.guild.id)
-    next_send = datetime.now(timezone.utc) + timedelta(hours=24)
 
     subs[guild_id] = {
-        "channel_id": channel.id,
-        "next_send": next_send.isoformat()
+        "channel_id": channel.id
     }
 
     save_subscriptions(subs)
 
-    # Send immediately
+    # Send verse immediately
     await send_daily_verse(channel)
 
     await interaction.response.send_message(
@@ -174,6 +167,7 @@ async def bible(interaction: discord.Interaction, channel: discord.TextChannel):
 # /random COMMAND
 # =============================
 @bot.tree.command(name="random", description="Get a random Bible verse")
+
 async def random_verse(interaction: discord.Interaction):
 
     embed = create_verse_embed("📖 Random Bible Verse")
@@ -193,31 +187,40 @@ async def random_verse(interaction: discord.Interaction):
 # =============================
 # DAILY CHECK LOOP
 # =============================
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=1)
 async def daily_checker():
+
+    global last_sent_date
 
     await bot.wait_until_ready()
 
     subs = load_subscriptions()
+
     now = datetime.now(timezone.utc)
-    updated = False
 
-    for guild_id, data in subs.items():
+    # Convert to JST
+    jst = now + timedelta(hours=9)
 
-        channel_id = data.get("channel_id")
-        next_send_str = data.get("next_send")
+    # Send at 9 PM JST
+    if jst.hour == 21 and jst.minute == 0:
 
-        if not channel_id or not next_send_str:
-            continue
+        today = jst.date()
 
-        try:
-            next_send = datetime.fromisoformat(next_send_str)
-        except:
-            continue
+        # Prevent duplicate sends
+        if last_sent_date == today:
+            return
 
-        if now >= next_send:
+        last_sent_date = today
+
+        for guild_id, data in subs.items():
+
+            channel_id = data.get("channel_id")
+
+            if not channel_id:
+                continue
 
             channel = bot.get_channel(int(channel_id))
+
             if channel is None:
                 try:
                     channel = await bot.fetch_channel(int(channel_id))
@@ -226,19 +229,14 @@ async def daily_checker():
 
             await send_daily_verse(channel)
 
-            new_next = now + timedelta(hours=24)
-            subs[guild_id]["next_send"] = new_next.isoformat()
-            updated = True
-
-    if updated:
-        save_subscriptions(subs)
-
 # =============================
 # READY EVENT
 # =============================
 @bot.event
 async def on_ready():
+
     print(f"Logged in as {bot.user}")
+
     if not daily_checker.is_running():
         daily_checker.start()
 
